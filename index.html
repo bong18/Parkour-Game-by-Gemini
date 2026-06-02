@@ -279,7 +279,7 @@
                 osc.start(now);
                 osc.stop(now + 0.12);
             } else if (type === 'footstep') {
-                // 부드럽게 흙이나 건물의 시멘트 콘크리트 바닥을 디딜 때 나는 둔탁한 발소리 합성
+                // 부드럽게 건물의 시멘트 콘크리트 바닥을 디딜 때 나는 발소리
                 osc.type = 'triangle';
                 osc.frequency.setValueAtTime(55, now);
                 osc.frequency.exponentialRampToValueAtTime(10, now + 0.08);
@@ -429,11 +429,12 @@
             const bx = Math.cos(angle) * dist;
             const bz = Math.sin(angle) * dist - 80;
             
+            // 이 원경 빌딩 메쉬들은 높이의 기준선이 'bh / 2 - 20' 이므로 밑바닥이 Y=-20 높이에 맞춰집니다.
             bMesh.position.set(bx, bh / 2 - 20, bz);
             scene.add(bMesh);
             backgroundBuildings.push(bMesh);
 
-            // Add simple window planes onto distant buildings for city scale
+            // Distant window lights
             const winGeo = new THREE.PlaneGeometry(0.5, 0.8);
             const winMat = new THREE.MeshBasicMaterial({ color: 0xffdb66 });
             
@@ -443,7 +444,9 @@
                 if (py < 10) continue;
                 if (Math.random() > 0.5) {
                     const win = new THREE.Mesh(winGeo, winMat);
-                    win.position.set(bx + (Math.random() - 0.5) * bw * 0.7, py, bz + bd/2 + 0.1);
+                    // [버그 수정] 빌딩 메쉬가 전체적으로 Y축으로 20만큼 내려가 있으므로, 
+                    // 창문의 절대 월드 고도 역시 'py - 20'으로 보정해야 빌딩 벽면에 정확히 붙게 됩니다!
+                    win.position.set(bx + (Math.random() - 0.5) * bw * 0.7, py - 20, bz + bd/2 + 0.1);
                     scene.add(win);
                 }
             }
@@ -571,7 +574,7 @@
             }
         }
 
-        // Generate procedural map along Z negative axis (linear sequence for performance)
+        // Generate procedural map along Z negative axis
         function generateCourse(stageNum) {
             // Cleanup existing
             buildings.forEach(b => b.destroy());
@@ -586,12 +589,10 @@
                 goalPortal = null;
             }
 
-            // Create 10 continuous sequence buildings with varying height, size, and gaps
             let currentZ = 0;
             let currentX = 0;
             let currentY = 15; // starting building height
 
-            // Set stage scale parameters for difficulty scaling
             const difficultyMultiplier = Math.min(1.0 + (stageNum - 1) * 0.1, 1.8);
 
             for (let i = 0; i < 9; i++) {
@@ -603,11 +604,9 @@
                     gap = 0;
                 } else {
                     w = 10 + Math.random() * 5;
-                    h = 10 + Math.random() * 10 + (Math.random() - 0.5) * 4; // subtle rise and fall
-                    h = Math.max(8, Math.min(h, 28)); // bound check
+                    h = 10 + Math.random() * 10 + (Math.random() - 0.5) * 4;
+                    h = Math.max(8, Math.min(h, 28));
                     d = 10 + Math.random() * 5;
-                    
-                    // Gap based on difficulty
                     gap = 5.0 + Math.random() * 3.5 * difficultyMultiplier;
                 }
 
@@ -619,21 +618,21 @@
                 const b = new CourseBuilding(currentX, h, currentZ, w, h, d);
                 buildings.push(b);
 
-                // Add rooftop obstacles to spice up the run
+                // Add rooftop obstacles
                 if (i > 0 && Math.random() > 0.4) {
                     addRooftopObstacle(b);
                 }
 
-                // Spawning floating star collectible above building rooftops
+                // Spawning floating star collectible
                 if (i > 0) {
                     spawnStar(currentX, h + 1.8, currentZ);
                 }
 
-                currentZ -= d / 2; // Offset for next iteration
+                currentZ -= d / 2; 
                 currentY = h;
             }
 
-            // Finally, Create a massive final Target/Goal Building at the end
+            // Target/Goal Building at the end
             const finalW = 15;
             const finalH = 12;
             const finalD = 15;
@@ -644,10 +643,9 @@
             const goalBuilding = new CourseBuilding(currentX, finalH, currentZ, finalW, finalH, finalD, 0x112211);
             buildings.push(goalBuilding);
 
-            // Create holographic green portal beacon at center of final roof
             createVictoryPortal(currentX, finalH, currentZ);
 
-            // Initialize player position on building 0 roof
+            // Initialize player position
             player.pos.set(buildings[0].x, buildings[0].h + player.height, buildings[0].z);
             player.vel.set(0, 0, 0);
             player.isGrounded = true;
@@ -656,14 +654,14 @@
 
             smoothCameraY = player.pos.y;
 
-            // Reset wall climbing stats on stage generate
+            // Reset wall climbing stats
             player.isWallClimbing = false;
             player.wallClimbTimer = 0;
             player.wallClimbCooldown = 0;
             player.lastWallIndex = -1;
         }
 
-        // Add modular crate obstacle on building top
+        // Add modular crate obstacle
         function addRooftopObstacle(building) {
             const cw = 1.8 + Math.random() * 1.5;
             const ch = 1.5 + Math.random() * 1.5;
@@ -922,7 +920,6 @@
 
             for (let i = 0; i < colliders.length; i++) {
                 const box = colliders[i];
-                // 머리부터 발목까지 수직 세그먼트가 빌딩의 높이에 걸쳐있는지 검증
                 if (player.pos.y - player.height < box.maxY && player.pos.y > box.minY) {
                     if (checkAABBCollision(player.pos.x, player.pos.y, player.pos.z, checkRadius, player.height, box)) {
                         let distToMinX = Math.abs((player.pos.x - player.radius) - box.minX);
@@ -971,10 +968,9 @@
                 const wallData = getNearWall();
                 
                 if (wallData && player.wallClimbCooldown <= 0) {
-                    // 공중 상태 + 인접 벽체 존재 + 스페이스바 입력 시 벽 오르기(Climb) 진입 (동일 벽 제한 조건 완화)
                     if (!player.isWallClimbing && keys.space) {
                         player.isWallClimbing = true;
-                        player.wallClimbTimer = 2.5; // 최대 등반 시간 대폭 상향 (기존 1.1초 -> 2.5초)
+                        player.wallClimbTimer = 2.5; // 최대 등반 시간 2.5초
                         player.lastWallIndex = wallData.index;
                         player.wallNormal.copy(wallData.normal);
                         playSynthesizedSound('wallrun');
@@ -987,11 +983,11 @@
                     if (currentWall && keys.space && player.wallClimbTimer > 0) {
                         player.wallClimbTimer -= dt;
                         
-                        // 시간 흐름에 따라 등반 추진 속도가 서서히 느려지는 역학 곡선 적용 (최대 속도 대폭 상향)
+                        // 시간 흐름에 따라 등반 추진 속도가 서서히 느려지는 역학 곡선 적용
                         const progress = player.wallClimbTimer / 2.5;
-                        player.vel.y = 8.5 * progress + 3.0; // 강하고 탄력적인 수직 가속도 공식 도입
+                        player.vel.y = 8.5 * progress + 3.0; 
 
-                        // 등반 시 옆으로 미끄러져 추락하지 않도록 횡방향 수평 속도는 완전 소거 처리
+                        // 등반 시 수평 속도는 차단
                         player.vel.x = 0;
                         player.vel.z = 0;
 
@@ -1000,21 +996,21 @@
                             playSynthesizedSound('wallrun');
                         }
 
-                        // 3. 벽 차고 뒤로 점프 (Wall Kick / Wall Jump)
+                        // 3. 벽 차고 뒤로 점프 (Wall Kick)
                         if (spacePressedThisFrame) {
-                            player.vel.y = 10.0; // 높은 점프 추진력 확보
+                            player.vel.y = 10.0; 
 
-                            // 벽의 법선 벡터(반대 방향)로 강력하게 플레이어를 튕겨내듯 밀어냅니다.
+                            // 벽의 반대 방향으로 강력하게 플레이어를 밀어냅니다.
                             player.vel.x = player.wallNormal.x * 7.5;
                             player.vel.z = player.wallNormal.z * 7.5;
 
                             player.isWallClimbing = false;
-                            player.wallClimbCooldown = 0.45; // 짧은 재발동 금지 시간 적용
+                            player.wallClimbCooldown = 0.45; 
                             playSynthesizedSound('jump');
                             landSpring = -0.15;
                         }
                     } else {
-                        // 스페이스바를 떼거나 힘(스태미나)을 다했을 시 하강 물리로 해제
+                        // 스페이스바를 떼거나 시간을 다했을 시 해제
                         player.isWallClimbing = false;
                         player.wallClimbCooldown = 0.5;
                     }
@@ -1025,7 +1021,7 @@
             const wallclimbBadge = document.getElementById('wallclimb-badge');
             if (player.isWallClimbing) {
                 wallclimbBadge.classList.remove('hidden');
-                const pct = Math.max(0, Math.floor((player.wallClimbTimer / 2.5) * 100)); // 최대 2.5초 기준 게이지 연동
+                const pct = Math.max(0, Math.floor((player.wallClimbTimer / 2.5) * 100)); 
                 wallclimbBadge.innerText = `WALL CLIMBING (${pct}%)`;
             } else {
                 wallclimbBadge.classList.add('hidden');
@@ -1066,7 +1062,6 @@
             // 벽 등반 중이 아닐 때만 일반 수평 관성 제어 허용
             if (!player.isWallClimbing) {
                 if (player.wallClimbCooldown > 0.15) {
-                    // 수직 벽 차기 직후 가혹한 선형 관성 보간 처리
                     player.vel.x = THREE.MathUtils.lerp(player.vel.x, moveDir.x * currentSpeed, 5 * dt);
                     player.vel.z = THREE.MathUtils.lerp(player.vel.z, moveDir.z * currentSpeed, 5 * dt);
                 } else {
@@ -1088,13 +1083,13 @@
                 landSpring = -0.15; 
             }
 
-            // 수평 충돌 체크
+            // 수평 충돌 체크 (안정성을 위해 수평 체크 시 음수 마진 -0.05를 사용하여 옥상 서 있을 때 발밑 빌딩과의 가짜 충돌을 완벽 방지)
             let nextX = player.pos.x + player.vel.x * dt;
             let nextZ = player.pos.z + player.vel.z * dt;
 
             let hitHorizontal = false;
             for (let box of colliders) {
-                if (checkAABBCollision(nextX, player.pos.y, nextZ, player.radius, player.height, box)) {
+                if (checkAABBCollision(nextX, player.pos.y, nextZ, player.radius, player.height, box, -0.05)) {
                     hitHorizontal = true;
                     break;
                 }
@@ -1106,7 +1101,7 @@
             } else {
                 let hitX = false;
                 for (let box of colliders) {
-                    if (checkAABBCollision(nextX, player.pos.y, player.pos.z, player.radius, player.height, box)) {
+                    if (checkAABBCollision(nextX, player.pos.y, player.pos.z, player.radius, player.height, box, -0.05)) {
                         hitX = true;
                         break;
                     }
@@ -1115,7 +1110,7 @@
 
                 let hitZ = false;
                 for (let box of colliders) {
-                    if (checkAABBCollision(player.pos.x, player.pos.y, nextZ, player.radius, player.height, box)) {
+                    if (checkAABBCollision(player.pos.x, player.pos.y, nextZ, player.radius, player.height, box, -0.05)) {
                         hitZ = true;
                         break;
                     }
@@ -1123,29 +1118,39 @@
                 if (!hitZ) player.pos.z = nextZ;
             }
 
-            // 수직 충돌 체크 및 리지 안정성 검출
+            // 수직 충돌 체크 및 리지 안정성 검출 (스냅 버그 완벽 수정부)
             let nextY = player.pos.y + player.vel.y * dt;
             let isLandingOnRoof = false;
             let currentSafeBuilding = -1;
 
             for (let i = 0; i < colliders.length; i++) {
                 const box = colliders[i];
-                // 찰나의 착지 시 순간이동 느낌을 없애기 위해 감지 허용 폭을 0.05m에서 0.015m(1.5cm)로 좁혀 밀착감을 늘림
+                
+                // [버그 해결 핵심] 직전 프레임에서 플레이어의 발(player.pos.y - player.height)이 옥상(box.maxY)보다 위에 있었을 때만 바닥 착지(Landing)로 인정합니다.
+                // 이외의 상황(벽면을 스치거나 옆에서 들이받는 경우)에서는 옥상 위로 텔레포트되는 스냅 연산을 차단하여 미끄러지도록 제어합니다.
+                const wasAboveRoof = (player.pos.y - player.height) >= (box.maxY - 0.15); // 15cm 여유 오프셋
+
                 if (checkAABBCollision(player.pos.x, nextY, player.pos.z, player.radius, player.height, box, 0.015)) {
                     if (player.vel.y <= 0) { 
-                        nextY = box.maxY + player.height;
-                        player.vel.y = 0;
-                        isLandingOnRoof = true;
+                        if (wasAboveRoof) {
+                            nextY = box.maxY + player.height;
+                            player.vel.y = 0;
+                            isLandingOnRoof = true;
 
-                        buildings.forEach((build, index) => {
-                            if (player.pos.x >= build.collider.minX && player.pos.x <= build.collider.maxX &&
-                                player.pos.z >= build.collider.minZ && player.pos.z <= build.collider.maxZ) {
-                                currentSafeBuilding = index;
-                            }
-                        });
+                            buildings.forEach((build, index) => {
+                                if (player.pos.x >= build.collider.minX && player.pos.x <= build.collider.maxX &&
+                                    player.pos.z >= build.collider.minZ && player.pos.z <= build.collider.maxZ) {
+                                    currentSafeBuilding = index;
+                                }
+                            });
+                        }
                     } else { 
-                        nextY = box.minY - 0.05;
-                        player.vel.y = 0;
+                        // 머리가 아래에서 위로 올라가다 부딪히는 경우
+                        const wasBelowCeiling = player.pos.y <= box.minY + 0.15;
+                        if (wasBelowCeiling) {
+                            nextY = box.minY - 0.05;
+                            player.vel.y = 0;
+                        }
                     }
                     break;
                 }
@@ -1173,15 +1178,11 @@
             let climbPitchOffset = 0;
             let climbXOffset = 0;
 
-            // 벽을 기어오를 때 특유의 신체 모션 카메라 오프셋 및 수직 헤드봅 계산
             if (player.isWallClimbing) {
-                // 등반 중일 땐 자연스레 난간 턱을 바라볼 수 있도록 시선을 강제로 위로 8도(0.14 rad) 회전
                 climbPitchOffset = 0.14;
-                // 양손으로 번갈아가며 짚을 때의 리드미컬한 좌우 좌상향 카메라 봅 모션
                 climbXOffset = Math.sin(time * 0.015) * 0.04;
                 customCamera.position.y = smoothCameraY + Math.abs(Math.sin(time * 0.015)) * 0.12 - landSpring;
             } else {
-                // 지상 런닝 시 기본 발걸음 헤드 봅 및 리드미컬 발소리 재생 연동
                 const speedMagnitude = Math.sqrt(player.vel.x * player.vel.x + player.vel.z * player.vel.z);
                 if (player.isGrounded && speedMagnitude > 0.5) {
                     const bobFreq = isSprinting ? 14 : 9.5;
@@ -1190,7 +1191,6 @@
                     const oldBobTimer = bobTimer;
                     bobTimer += dt * bobFreq;
                     
-                    // bobTimer가 반 주기(Step)를 지날 때 마다 발소리 재생
                     if (Math.floor(bobTimer / Math.PI) > Math.floor(oldBobTimer / Math.PI)) {
                         playSynthesizedSound('footstep');
                     }
@@ -1205,7 +1205,6 @@
             customCamera.position.x = player.pos.x + climbXOffset;
             customCamera.position.z = player.pos.z;
 
-            // 벽등반 특유의 수직 시선 조절 값 합성 반영
             customCamera.rotation.y = yaw;
             customCamera.rotation.x = pitch + climbPitchOffset;
 
@@ -1216,7 +1215,6 @@
             
             customCamera.rotation.z = THREE.MathUtils.lerp(customCamera.rotation.z, targetTilt, 8 * dt);
 
-            // 단발성 이벤트 리셋
             spacePressedThisFrame = false;
 
             // Check Collectibles collision
