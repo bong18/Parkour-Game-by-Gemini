@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>별이 빛나는 밤 - 3D 1인칭 파쿠르</title>
+    <!-- Tailwind CSS for sleek UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #030310;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 20;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.7);
+        }
+        #crosshair::before { top: 4px; left: 0; width: 10px; height: 2px; }
+        #crosshair::after { top: 0; left: 4px; width: 2px; height: 10px; }
+
+        /* Virtual Joystick Styles for Mobile */
+        .joystick-zone {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            z-index: 30;
+            display: none;
+            touch-action: none;
+        }
+        .joystick-knob {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Crosshair -->
+    <div id="crosshair"></div>
+
+    <!-- HUD (Game Info Dashboard) -->
+    <div class="absolute top-4 left-4 z-20 pointer-events-none select-none text-white drop-shadow-lg flex flex-col gap-1">
+        <div class="text-xs uppercase tracking-widest text-blue-300 font-semibold">Starry Night Parkour</div>
+        <div class="text-3xl font-bold flex items-center gap-2">
+            STAGERUN <span id="hud-stage" class="text-yellow-400">1</span>
+        </div>
+        <div class="text-sm opacity-90">Score: <span id="hud-score" class="font-semibold text-green-300">0</span></div>
+        <div class="text-xs opacity-70">High: <span id="hud-high" class="font-semibold text-gray-300">0</span></div>
+    </div>
+
+    <!-- Right HUD for Speed / Sprint state -->
+    <div class="absolute top-4 right-4 z-20 pointer-events-none select-none text-white drop-shadow-lg text-right flex flex-col items-end gap-1">
+        <div id="sprint-badge" class="text-xs bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded inline-block font-mono tracking-wider">
+            WALKING
+        </div>
+        <!-- Wall Climb Visual Indicator -->
+        <div id="wallclimb-badge" class="hidden text-xs bg-purple-500/30 text-purple-300 border border-purple-500/40 px-2 py-0.5 rounded font-mono tracking-wider animate-pulse">
+            WALL CLIMBING (100%)
+        </div>
+        <div class="text-xs text-gray-400 mt-1">이동: WASD / 대시: SHIFT</div>
+    </div>
+
+    <!-- Instruction Overlay (Start / Pause Screen) -->
+    <div id="overlay" class="absolute inset-0 bg-black/85 flex flex-col justify-center items-center z-40 transition-opacity duration-300 text-white p-6">
+        <div class="max-w-md w-full text-center space-y-6">
+            <h1 class="text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-yellow-200">
+                STARRY PARKOUR 3D
+            </h1>
+            <p class="text-sm text-gray-400">
+                은은한 불빛이 반짝이는 깊은 밤 빌딩 숲,<br>
+                추락을 두려워하지 않고 하늘을 향해 도약하세요.
+            </p>
+
+            <!-- Instructions Section -->
+            <div class="bg-white/5 border border-white/10 rounded-xl p-4 text-left text-xs space-y-2 font-mono">
+                <div class="text-yellow-300 text-center font-bold mb-2 uppercase tracking-wide">조작 방법 (PC)</div>
+                <div class="flex justify-between border-b border-white/5 pb-1">
+                    <span class="text-gray-400">앞 / 뒤 / 좌 / 우</span>
+                    <span class="text-white font-bold">W / S / A / D 또는 방향키</span>
+                </div>
+                <div class="flex justify-between border-b border-white/5 pb-1">
+                    <span class="text-gray-400">도약 (점프)</span>
+                    <span class="text-white font-bold">SPACEBAR</span>
+                </div>
+                <div class="flex justify-between border-b border-white/5 pb-1 text-cyan-300">
+                    <span>벽 오르기 (Wall Climb) ★</span>
+                    <span class="font-bold">공중에서 벽에 닿은 채 SPACEBAR 길게 누르기</span>
+                </div>
+                <div class="flex justify-between border-b border-white/5 pb-1 text-purple-300">
+                    <span>벽 차고 점프 (Wall Kick) ★</span>
+                    <span class="font-bold">벽을 기어오르는 중 SPACEBAR 다시 누르기</span>
+                </div>
+                <div class="flex justify-between border-b border-white/5 pb-1">
+                    <span class="text-gray-400">질주 (대시)</span>
+                    <span class="text-white font-bold">L-SHIFT 누른 채 이동</span>
+                </div>
+                <div class="flex justify-between pb-1">
+                    <span class="text-gray-400">시선 돌리기</span>
+                    <span class="text-white font-bold">마우스 움직임 (클릭 필요)</span>
+                </div>
+            </div>
+
+            <!-- Mobile Info -->
+            <div class="mobile-only-info text-xs text-cyan-300 hidden">
+                📱 모바일 감지: 가상 조이스틱으로 이동하고 우측 화면을 드래그해 카메라를 조절합니다. 벽면에 밀착한 채 JUMP를 누르고 있으면 수직으로 기어오릅니다!
+            </div>
+
+            <button id="btn-start" class="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-lg font-bold shadow-lg shadow-indigo-600/30 transition-transform active:scale-95">
+                게임 시작하기
+            </button>
+            <p class="text-[10px] text-gray-500">마우스 고정을 풀려면 ESC 키를 누르세요.</p>
+        </div>
+    </div>
+
+    <!-- Level Cleared / Stage Win Modal -->
+    <div id="victory-modal" class="absolute inset-0 bg-indigo-950/90 z-50 flex flex-col justify-center items-center text-white hidden p-6">
+        <div class="text-center space-y-4 max-w-sm">
+            <div class="text-6xl">🌃</div>
+            <h2 class="text-3xl font-extrabold text-yellow-300 tracking-tight">STAGE CLEAR!</h2>
+            <p class="text-gray-300 text-sm">빌딩 숲을 무사히 통과하여 골 지점에 도착했습니다.</p>
+            <div class="bg-white/5 p-3 rounded-lg border border-white/10 font-mono text-xs">
+                <div class="flex justify-between mb-1">
+                    <span class="text-gray-400">현재 점수</span>
+                    <span id="victory-score" class="font-bold text-green-300">0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">보너스 점수</span>
+                    <span class="font-bold text-yellow-400">+500</span>
+                </div>
+            </div>
+            <button id="btn-next-stage" class="w-full py-3 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors">
+                다음 스테이지 도전
+            </button>
+        </div>
+    </div>
+
+    <!-- Fall Out / Game Over Modal -->
+    <div id="fall-modal" class="absolute inset-0 bg-red-950/80 z-50 flex flex-col justify-center items-center text-white hidden p-6">
+        <div class="text-center space-y-4 max-w-sm">
+            <div class="text-6xl">💫</div>
+            <h2 class="text-3xl font-extrabold text-red-400 tracking-tight">추 락!</h2>
+            <p class="text-gray-300 text-sm">밤하늘 아래 빌딩 틈새로 발을 헛디뎠습니다. 하지만 파쿠르 러너는 포기하지 않습니다!</p>
+            <div class="bg-white/5 p-3 rounded-lg border border-white/10 font-mono text-xs text-center">
+                <span class="text-gray-400">현재 스테이지 : </span><span id="fail-stage" class="font-bold text-white">1</span>
+            </div>
+            <button id="btn-respawn" class="w-full py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold transition-colors">
+                마지막 체크포인트에서 재시작
+            </button>
+        </div>
+    </div>
+
+    <!-- Mobile Virtual Controls -->
+    <div id="joystick-left" class="joystick-zone">
+        <div id="joystick-knob-left" class="joystick-knob"></div>
+    </div>
+    <div id="mobile-jump" class="absolute bottom-[40px] right-[40px] w-[70px] height-[70px] h-[70px] bg-white/10 border-2 border-white/20 active:bg-white/30 rounded-full flex justify-center items-center z-30 select-none text-white font-bold text-sm hidden touch-action-none shadow-lg">
+        JUMP
+    </div>
+
+    <!-- Game Logic Scripts -->
+    <script>
+        // -------------------------------------------------------------
+        // Synthesized Audio Controller (Web Audio API)
+        // -------------------------------------------------------------
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSynthesizedSound(type) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'jump') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(120, now);
+                osc.frequency.exponentialRampToValueAtTime(320, now + 0.12);
+                gainNode.gain.setValueAtTime(0.2, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } else if (type === 'land') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(80, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            } else if (type === 'star') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, now); // D5
+                osc.frequency.setValueAtTime(880, now + 0.08); // A5
+                osc.frequency.setValueAtTime(1174.66, now + 0.16); // D6
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                osc.start(now);
+                osc.stop(now + 0.35);
+            } else if (type === 'fall') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(250, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 0.6);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+                osc.start(now);
+                osc.stop(now + 0.6);
+            } else if (type === 'victory') {
+                osc.type = 'sine';
+                const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+                notes.forEach((freq, i) => {
+                    const oscSeq = audioCtx.createOscillator();
+                    const gainSeq = audioCtx.createGain();
+                    oscSeq.connect(gainSeq);
+                    gainSeq.connect(audioCtx.destination);
+                    oscSeq.type = 'sine';
+                    oscSeq.frequency.setValueAtTime(freq, now + i * 0.1);
+                    gainSeq.gain.setValueAtTime(0.15, now + i * 0.1);
+                    gainSeq.gain.exponentialRampToValueAtTime(0.01, now + i * 0.1 + 0.3);
+                    oscSeq.start(now + i * 0.1);
+                    oscSeq.stop(now + i * 0.1 + 0.3);
+                });
+            } else if (type === 'wallrun') {
+                // 가볍게 벽을 기어 짚고 올라갈 때의 마찰 마찰음 효과음 합성
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(60, now);
+                osc.frequency.linearRampToValueAtTime(95, now + 0.12);
+                gainNode.gain.setValueAtTime(0.12, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } else if (type === 'footstep') {
+                // 부드럽게 흙이나 건물의 시멘트 콘크리트 바닥을 디딜 때 나는 둔탁한 발소리 합성
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(55, now);
+                osc.frequency.exponentialRampToValueAtTime(10, now + 0.08);
+                gainNode.gain.setValueAtTime(0.08, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Game State Variables
+        // -------------------------------------------------------------
+        let currentStage = 1;
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('parkour_high_score')) || 0;
+        document.getElementById('hud-high').innerText = highScore;
+
+        // Player Stats
+        let player = {
+            pos: new THREE.Vector3(0, 15, 0),
+            vel: new THREE.Vector3(0, 0, 0),
+            height: 1.8,
+            radius: 0.6,
+            isGrounded: false,
+            lastSafePosition: new THREE.Vector3(0, 15, 0),
+            lastSafeBuildingIndex: 0,
+            
+            // Wall Climb State Variables (수직 벽 오르기 시스템)
+            isWallClimbing: false,
+            wallClimbTimer: 0,
+            wallClimbCooldown: 0,
+            lastWallIndex: -1,
+            wallNormal: new THREE.Vector3()
+        };
+
+        // Keyboard State
+        const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+        let spacePressedThisFrame = false; // 벽 도약 전용 단발성 입력 감지
+        let isPointerLocked = false;
+
+        // Camera Look variables
+        let pitch = 0;
+        let yaw = 0;
+        const mouseSensitivity = 0.0022;
+
+        // Mobile Controls Support
+        let isMobileDevice = false;
+        let touchLookActive = false;
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        let joystickActive = false;
+        let joystickStart = { x: 0, y: 0 };
+        let joystickMove = { x: 0, y: 0 };
+        const joystickLimit = 45;
+        let touchMoveVector = { x: 0, y: 0 };
+
+        // -------------------------------------------------------------
+        // Three.js Setup
+        // -------------------------------------------------------------
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x02020a);
+        scene.fog = new THREE.FogExp2(0x02020a, 0.007); // Subtle midnight fog
+
+        const camera = new THREE.Camera(); 
+        let customCamera; 
+        const container = document.getElementById('canvas-container');
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        customCamera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+        customCamera.rotation.order = 'YXZ'; // Important for first-person camera system
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x0b1122, 1.2); // Soft dark blue night fill
+        scene.add(ambientLight);
+
+        // Moon light (Cast moonlight from high above)
+        const moonLight = new THREE.DirectionalLight(0xbbe0ff, 0.8);
+        moonLight.position.set(100, 150, -100);
+        scene.add(moonLight);
+
+        // -------------------------------------------------------------
+        // Environmental Assets (Moon, Stars, Background buildings)
+        // -------------------------------------------------------------
+        // 1. Glowing Moon
+        const moonGeo = new THREE.SphereGeometry(8, 32, 32);
+        const moonMat = new THREE.MeshBasicMaterial({ color: 0xfffae0 });
+        const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+        moonMesh.position.set(120, 140, -180);
+        scene.add(moonMesh);
+
+        // 2. Twinkling Stars
+        const starCount = 350;
+        const starGeometry = new THREE.BufferGeometry();
+        const starPositions = new Float32Array(starCount * 3);
+        const starAlphas = new Float32Array(starCount);
+
+        for (let i = 0; i < starCount; i++) {
+            const u = Math.random();
+            const v = Math.random();
+            const theta = u * 2.0 * Math.PI;
+            const phi = Math.acos(2.0 * v - 1.0);
+            const r = 280;
+            
+            const px = r * Math.sin(phi) * Math.cos(theta);
+            const py = Math.abs(r * Math.sin(phi) * Math.sin(theta));
+            const pz = r * Math.cos(phi);
+
+            starPositions[i * 3] = px;
+            starPositions[i * 3 + 1] = py;
+            starPositions[i * 3 + 2] = pz;
+            starAlphas[i] = Math.random();
+        }
+
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 1.6,
+            transparent: true,
+            opacity: 0.9,
+            sizeAttenuation: true
+        });
+        const starPoints = new THREE.Points(starGeometry, starMaterial);
+        scene.add(starPoints);
+
+        // Decorative distant city skyscrapers
+        const backgroundBuildings = [];
+        for (let i = 0; i < 35; i++) {
+            const bh = 50 + Math.random() * 120;
+            const bw = 15 + Math.random() * 20;
+            const bd = 15 + Math.random() * 20;
+            const bgGeo = new THREE.BoxGeometry(bw, bh, bd);
+            const bgMat = new THREE.MeshStandardMaterial({
+                color: 0x050711,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const bMesh = new THREE.Mesh(bgGeo, bgMat);
+            
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 120 + Math.random() * 150;
+            const bx = Math.cos(angle) * dist;
+            const bz = Math.sin(angle) * dist - 80;
+            
+            bMesh.position.set(bx, bh / 2 - 20, bz);
+            scene.add(bMesh);
+            backgroundBuildings.push(bMesh);
+
+            // Add simple window planes onto distant buildings for city scale
+            const winGeo = new THREE.PlaneGeometry(0.5, 0.8);
+            const winMat = new THREE.MeshBasicMaterial({ color: 0xffdb66 });
+            
+            const rows = Math.floor(bh / 6);
+            for (let r = 2; r < rows; r++) {
+                const py = bh - r * 5;
+                if (py < 10) continue;
+                if (Math.random() > 0.5) {
+                    const win = new THREE.Mesh(winGeo, winMat);
+                    win.position.set(bx + (Math.random() - 0.5) * bw * 0.7, py, bz + bd/2 + 0.1);
+                    scene.add(win);
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Level Objects & Map Generator (Playable Collidable Course)
+        // -------------------------------------------------------------
+        let buildings = [];
+        let colliders = []; // Solid collision volumes
+        let stars = [];     // Collectible points
+        let windows = [];   // Decorative window lights
+        let goalPortal = null;
+
+        // Custom building helper
+        class CourseBuilding {
+            constructor(x, y, z, w, h, d, color = 0x0b0e1a) {
+                this.x = x;
+                this.y = h / 2; // offset box center
+                this.z = z;
+                this.w = w;
+                this.h = h;
+                this.d = d;
+
+                // Mesh creation
+                const geometry = new THREE.BoxGeometry(w, h, d);
+                const material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.85,
+                    metalness: 0.15,
+                    flatShading: true
+                });
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.set(x, this.y, z);
+                scene.add(this.mesh);
+
+                // Add AABB collider bounds
+                this.collider = {
+                    minX: x - w / 2, maxX: x + w / 2,
+                    minY: 0, maxY: h,
+                    minZ: z - d / 2, maxZ: z + d / 2
+                };
+                colliders.push(this.collider);
+
+                // Attach glowing windows on building facades
+                this.addFacadeWindows();
+            }
+
+            addFacadeWindows() {
+                const winColor = 0xffdf6d; // Warm lit yellow
+                const windowMaterial = new THREE.MeshBasicMaterial({ color: winColor });
+                const windowGeom = new THREE.PlaneGeometry(0.5, 0.8);
+
+                const stepY = 2.8;
+                const stepX = 2.0;
+
+                const startY = 4.0;
+                const rows = Math.floor((this.h - startY) / stepY);
+                const colsW = Math.floor((this.w - 1.5) / stepX);
+                const colsD = Math.floor((this.d - 1.5) / stepX);
+
+                // Facade Front (Z+)
+                for (let r = 0; r < rows; r++) {
+                    const py = this.h - 1.5 - r * stepY;
+                    if (py < 1.0) continue;
+                    for (let c = 0; c < colsW; c++) {
+                        if (Math.random() < 0.35) { // 35% density
+                            const px = this.x - this.w/2 + 1.0 + c * stepX;
+                            const win = new THREE.Mesh(windowGeom, windowMaterial);
+                            win.position.set(px, py, this.z + this.d/2 + 0.03);
+                            scene.add(win);
+                            windows.push(win);
+                        }
+                    }
+                }
+                // Facade Back (Z-)
+                for (let r = 0; r < rows; r++) {
+                    const py = this.h - 1.5 - r * stepY;
+                    if (py < 1.0) continue;
+                    for (let c = 0; c < colsW; c++) {
+                        if (Math.random() < 0.35) {
+                            const px = this.x - this.w/2 + 1.0 + c * stepX;
+                            const win = new THREE.Mesh(windowGeom, windowMaterial);
+                            win.position.set(px, py, this.z - this.d/2 - 0.03);
+                            win.rotation.y = Math.PI;
+                            scene.add(win);
+                            windows.push(win);
+                        }
+                    }
+                }
+                // Facade Left (X-)
+                for (let r = 0; r < rows; r++) {
+                    const py = this.h - 1.5 - r * stepY;
+                    if (py < 1.0) continue;
+                    for (let c = 0; c < colsD; c++) {
+                        if (Math.random() < 0.35) {
+                            const pz = this.z - this.d/2 + 1.0 + c * stepX;
+                            const win = new THREE.Mesh(windowGeom, windowMaterial);
+                            win.position.set(this.x - this.w/2 - 0.03, py, pz);
+                            win.rotation.y = -Math.PI / 2;
+                            scene.add(win);
+                            windows.push(win);
+                        }
+                    }
+                }
+                // Facade Right (X+)
+                for (let r = 0; r < rows; r++) {
+                    const py = this.h - 1.5 - r * stepY;
+                    if (py < 1.0) continue;
+                    for (let c = 0; c < colsD; c++) {
+                        if (Math.random() < 0.35) {
+                            const pz = this.z - this.d/2 + 1.0 + c * stepX;
+                            const win = new THREE.Mesh(windowGeom, windowMaterial);
+                            win.position.set(this.x + this.w/2 + 0.03, py, pz);
+                            win.rotation.y = Math.PI / 2;
+                            scene.add(win);
+                            windows.push(win);
+                        }
+                    }
+                }
+            }
+
+            destroy() {
+                scene.remove(this.mesh);
+            }
+        }
+
+        // Generate procedural map along Z negative axis (linear sequence for performance)
+        function generateCourse(stageNum) {
+            // Cleanup existing
+            buildings.forEach(b => b.destroy());
+            buildings = [];
+            colliders = [];
+            
+            stars.forEach(s => scene.remove(s));
+            stars = [];
+
+            if (goalPortal) {
+                scene.remove(goalPortal);
+                goalPortal = null;
+            }
+
+            // Create 10 continuous sequence buildings with varying height, size, and gaps
+            let currentZ = 0;
+            let currentX = 0;
+            let currentY = 15; // starting building height
+
+            // Set stage scale parameters for difficulty scaling
+            const difficultyMultiplier = Math.min(1.0 + (stageNum - 1) * 0.1, 1.8);
+
+            for (let i = 0; i < 9; i++) {
+                let w, h, d, gap;
+                if (i === 0) {
+                    w = 14;
+                    h = 15;
+                    d = 14;
+                    gap = 0;
+                } else {
+                    w = 10 + Math.random() * 5;
+                    h = 10 + Math.random() * 10 + (Math.random() - 0.5) * 4; // subtle rise and fall
+                    h = Math.max(8, Math.min(h, 28)); // bound check
+                    d = 10 + Math.random() * 5;
+                    
+                    // Gap based on difficulty
+                    gap = 5.0 + Math.random() * 3.5 * difficultyMultiplier;
+                }
+
+                currentZ -= (d / 2 + gap);
+                if (i > 0) {
+                    currentX += (Math.random() - 0.5) * 5;
+                }
+
+                const b = new CourseBuilding(currentX, h, currentZ, w, h, d);
+                buildings.push(b);
+
+                // Add rooftop obstacles to spice up the run
+                if (i > 0 && Math.random() > 0.4) {
+                    addRooftopObstacle(b);
+                }
+
+                // Spawning floating star collectible above building rooftops
+                if (i > 0) {
+                    spawnStar(currentX, h + 1.8, currentZ);
+                }
+
+                currentZ -= d / 2; // Offset for next iteration
+                currentY = h;
+            }
+
+            // Finally, Create a massive final Target/Goal Building at the end
+            const finalW = 15;
+            const finalH = 12;
+            const finalD = 15;
+            const finalGap = 6.0 + Math.random() * 2 * difficultyMultiplier;
+            currentZ -= (finalD / 2 + finalGap);
+            currentX += (Math.random() - 0.5) * 4;
+
+            const goalBuilding = new CourseBuilding(currentX, finalH, currentZ, finalW, finalH, finalD, 0x112211);
+            buildings.push(goalBuilding);
+
+            // Create holographic green portal beacon at center of final roof
+            createVictoryPortal(currentX, finalH, currentZ);
+
+            // Initialize player position on building 0 roof
+            player.pos.set(buildings[0].x, buildings[0].h + player.height, buildings[0].z);
+            player.vel.set(0, 0, 0);
+            player.isGrounded = true;
+            player.lastSafePosition.copy(player.pos);
+            player.lastSafeBuildingIndex = 0;
+
+            // Reset wall climbing stats on stage generate
+            player.isWallClimbing = false;
+            player.wallClimbTimer = 0;
+            player.wallClimbCooldown = 0;
+            player.lastWallIndex = -1;
+        }
+
+        // Add modular crate obstacle on building top
+        function addRooftopObstacle(building) {
+            const cw = 1.8 + Math.random() * 1.5;
+            const ch = 1.5 + Math.random() * 1.5;
+            const cd = 1.8 + Math.random() * 1.5;
+
+            const ox = (Math.random() - 0.5) * (building.w - 4);
+            const oz = (Math.random() - 0.5) * (building.d - 4);
+
+            const px = building.x + ox;
+            const py = building.h + ch/2;
+            const pz = building.z + oz;
+
+            const crateGeo = new THREE.BoxGeometry(cw, ch, cd);
+            const crateMat = new THREE.MeshStandardMaterial({
+                color: 0x442a15,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const crateMesh = new THREE.Mesh(crateGeo, crateMat);
+            crateMesh.position.set(px, py, pz);
+            scene.add(crateMesh);
+            
+            building.mesh.add(crateMesh);
+            crateMesh.position.set(ox, ch/2 + building.h/2, oz); 
+
+            const obstacleCollider = {
+                minX: px - cw / 2, maxX: px + cw / 2,
+                minY: building.h, maxY: building.h + ch,
+                minZ: pz - cd / 2, maxZ: pz + cd / 2
+            };
+            colliders.push(obstacleCollider);
+        }
+
+        // Spawns golden star collectibles
+        function spawnStar(x, y, z) {
+            const starGeo = new THREE.OctahedronGeometry(0.5, 0);
+            const starMat = new THREE.MeshBasicMaterial({
+                color: 0xffd700,
+                wireframe: true
+            });
+            const starMesh = new THREE.Mesh(starGeo, starMat);
+            starMesh.position.set(x, y + 0.5, z);
+            scene.add(starMesh);
+            stars.push(starMesh);
+        }
+
+        // Glowing Victory Portal Beacon
+        function createVictoryPortal(x, y, z) {
+            const portalGeo = new THREE.CylinderGeometry(3.5, 3.5, 6, 16, 1, true);
+            const portalMat = new THREE.MeshBasicMaterial({
+                color: 0x00ffcc,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide
+            });
+            goalPortal = new THREE.Mesh(portalGeo, portalMat);
+            goalPortal.position.set(x, y + 3, z);
+            scene.add(goalPortal);
+
+            const pointLight = new THREE.PointLight(0x00ffcc, 1.5, 12);
+            pointLight.position.set(0, -1, 0);
+            goalPortal.add(pointLight);
+        }
+
+        // Initialize first stage course
+        generateCourse(currentStage);
+
+        // -------------------------------------------------------------
+        // Pointer Lock & Device Check Controls
+        // -------------------------------------------------------------
+        const btnStart = document.getElementById('btn-start');
+        const overlay = document.getElementById('overlay');
+
+        isMobileDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (isMobileDevice) {
+            document.querySelector('.mobile-only-info').classList.remove('hidden');
+            document.getElementById('joystick-left').style.display = 'block';
+            document.getElementById('mobile-jump').style.display = 'flex';
+            document.getElementById('crosshair').style.display = 'none'; 
+        }
+
+        btnStart.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!isMobileDevice) {
+                document.body.requestPointerLock();
+            } else {
+                overlay.classList.add('opacity-0');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                isPointerLocked = true;
+                overlay.classList.add('opacity-0');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            } else {
+                isPointerLocked = false;
+                overlay.classList.remove('hidden');
+                setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+            }
+        });
+
+        // Mouse Look Event
+        document.addEventListener('mousemove', (e) => {
+            if (!isPointerLocked) return;
+
+            yaw -= e.movementX * mouseSensitivity;
+            pitch -= e.movementY * mouseSensitivity;
+
+            pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+        });
+
+        // Keyboard Controls
+        const handleKeyEvent = (e, isDown) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || e.key === 'ArrowUp') keys.w = isDown;
+            if (key === 's' || e.key === 'ArrowDown') keys.s = isDown;
+            if (key === 'a' || e.key === 'ArrowLeft') keys.a = isDown;
+            if (key === 'd' || e.key === 'ArrowRight') keys.d = isDown;
+            if (e.key === ' ' || key === 'spacebar') {
+                if (isDown && !keys.space) {
+                    spacePressedThisFrame = true; // 에지 트리거 활성화
+                }
+                keys.space = isDown;
+            }
+            if (e.key === 'Shift') keys.shift = isDown;
+        };
+
+        document.addEventListener('keydown', (e) => handleKeyEvent(e, true));
+        document.addEventListener('keyup', (e) => handleKeyEvent(e, false));
+
+        // -------------------------------------------------------------
+        // Mobile Touch Events (Joystick & Swipe Look)
+        // -------------------------------------------------------------
+        const joyZone = document.getElementById('joystick-left');
+        const joyKnob = document.getElementById('joystick-knob-left');
+        const mobileJump = document.getElementById('mobile-jump');
+
+        let joystickTouchId = null;
+        let lookTouchId = null;
+
+        window.addEventListener('touchstart', (e) => {
+            for (let touch of e.changedTouches) {
+                const clientX = touch.clientX;
+                const clientY = touch.clientY;
+
+                if (clientX < window.innerWidth * 0.45 && joystickTouchId === null) {
+                    joystickTouchId = touch.identifier;
+                    joystickActive = true;
+                    joystickStart.x = clientX;
+                    joystickStart.y = clientY;
+
+                    joyZone.style.left = `${clientX - 60}px`;
+                    joyZone.style.bottom = `${window.innerHeight - clientY - 60}px`;
+                } 
+                else if (clientX >= window.innerWidth * 0.45 && lookTouchId === null) {
+                    lookTouchId = touch.identifier;
+                    lastTouchX = clientX;
+                    lastTouchY = clientY;
+                    touchLookActive = true;
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) {
+                    const dx = touch.clientX - joystickStart.x;
+                    const dy = touch.clientY - joystickStart.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    let rx = dx;
+                    let ry = dy;
+                    if (dist > joystickLimit) {
+                        rx = (dx / dist) * joystickLimit;
+                        ry = (dy / dist) * joystickLimit;
+                    }
+
+                    joyKnob.style.transform = `translate(calc(-50% + ${rx}px), calc(-50% + ${ry}px))`;
+
+                    touchMoveVector.x = rx / joystickLimit;
+                    touchMoveVector.y = -ry / joystickLimit; 
+                } 
+                else if (touch.identifier === lookTouchId) {
+                    const dx = touch.clientX - lastTouchX;
+                    const dy = touch.clientY - lastTouchY;
+
+                    yaw -= dx * 0.005; 
+                    pitch -= dy * 0.005;
+                    pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+
+                    lastTouchX = touch.clientX;
+                    lastTouchY = touch.clientY;
+                }
+            }
+        }, { passive: false });
+
+        const endTouchHandler = (e) => {
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) {
+                    joystickTouchId = null;
+                    joystickActive = false;
+                    touchMoveVector = { x: 0, y: 0 };
+                    joyKnob.style.transform = 'translate(-50%, -50%)';
+                    
+                    joyZone.style.left = '30px';
+                    joyZone.style.bottom = '30px';
+                } 
+                else if (touch.identifier === lookTouchId) {
+                    lookTouchId = null;
+                    touchLookActive = false;
+                }
+            }
+        };
+
+        window.addEventListener('touchend', endTouchHandler);
+        window.addEventListener('touchcancel', endTouchHandler);
+
+        // Mobile Jump Touch
+        mobileJump.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            spacePressedThisFrame = true;
+            keys.space = true;
+        });
+        mobileJump.addEventListener('touchend', () => {
+            keys.space = false;
+        });
+
+        // -------------------------------------------------------------
+        // Core Physics, Movement, & Collision Engine with Wall Climb
+        // -------------------------------------------------------------
+        function checkAABBCollision(px, py, pz, radius, height, box, yTolerance = 0.0) {
+            const pMinX = px - radius;
+            const pMaxX = px + radius;
+            const pMinZ = pz - radius;
+            const pMaxZ = pz + radius;
+            
+            const pMinY = py - height;
+            const pMaxY = py;
+
+            return (
+                pMinX < box.maxX && pMaxX > box.minX &&
+                pMinZ < box.maxZ && pMaxZ > box.minZ &&
+                (pMinY - yTolerance) < box.maxY && pMaxY > box.minY
+            );
+        }
+
+        // 벽 등반 판정을 위해 캐릭터 주변 반경 0.5m 안의 인접 벽면과 법선 벡터를 탐색합니다.
+        function getNearWall() {
+            if (player.isGrounded) return null;
+            const checkRadius = player.radius + 0.5;
+
+            for (let i = 0; i < colliders.length; i++) {
+                const box = colliders[i];
+                // 머리부터 발목까지 수직 세그먼트가 빌딩의 높이에 걸쳐있는지 검증
+                if (player.pos.y - player.height < box.maxY && player.pos.y > box.minY) {
+                    if (checkAABBCollision(player.pos.x, player.pos.y, player.pos.z, checkRadius, player.height, box)) {
+                        let distToMinX = Math.abs((player.pos.x - player.radius) - box.minX);
+                        let distToMaxX = Math.abs((player.pos.x + player.radius) - box.maxX);
+                        let distToMinZ = Math.abs((player.pos.z - player.radius) - box.minZ);
+                        let distToMaxZ = Math.abs((player.pos.z + player.radius) - box.maxZ);
+
+                        let minDist = Math.min(distToMinX, distToMaxX, distToMinZ, distToMaxZ);
+                        let normal = new THREE.Vector3();
+                        
+                        if (minDist === distToMinX) normal.set(-1, 0, 0);
+                        else if (minDist === distToMaxX) normal.set(1, 0, 0);
+                        else if (minDist === distToMinZ) normal.set(0, 0, -1);
+                        else if (minDist === distToMaxZ) normal.set(0, 0, 1);
+
+                        return { box, index: i, normal };
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Head bobbing & Camera Land impact spring variables
+        let bobTimer = 0;
+        let landSpring = 0;
+        let lastGroundedState = true;
+
+        function updatePhysics(dt) {
+            const time = performance.now();
+
+            // 1. 벽 등반(Wall Climb) 쿨다운 감소
+            if (player.wallClimbCooldown > 0) {
+                player.wallClimbCooldown -= dt;
+            }
+
+            // 2. 수직 벽 오르기 조건 및 분기 연산
+            if (player.isGrounded) {
+                player.isWallClimbing = false;
+                player.lastWallIndex = -1;
+                player.wallClimbTimer = 0;
+            } else {
+                const wallData = getNearWall();
+                
+                if (wallData && player.wallClimbCooldown <= 0) {
+                    // 공중 상태 + 인접 벽체 존재 + 스페이스바 입력 시 벽 오르기(Climb) 진입 (동일 벽 제한 조건 완화)
+                    if (!player.isWallClimbing && keys.space) {
+                        player.isWallClimbing = true;
+                        player.wallClimbTimer = 2.5; // 최대 등반 시간 대폭 상향 (기존 1.1초 -> 2.5초)
+                        player.lastWallIndex = wallData.index;
+                        player.wallNormal.copy(wallData.normal);
+                        playSynthesizedSound('wallrun');
+                    }
+                }
+
+                // 벽 등반 루프 물리 가속도 갱신
+                if (player.isWallClimbing) {
+                    const currentWall = getNearWall();
+                    if (currentWall && keys.space && player.wallClimbTimer > 0) {
+                        player.wallClimbTimer -= dt;
+                        
+                        // 시간 흐름에 따라 등반 추진 속도가 서서히 느려지는 역학 곡선 적용 (최대 속도 대폭 상향)
+                        const progress = player.wallClimbTimer / 2.5;
+                        player.vel.y = 8.5 * progress + 3.0; // 강하고 탄력적인 수직 가속도 공식 도입
+
+                        // 등반 시 옆으로 미끄러져 추락하지 않도록 횡방향 수평 속도는 완전 소거 처리
+                        player.vel.x = 0;
+                        player.vel.z = 0;
+
+                        // 손으로 벽을 번갈아 짚는 기계적 파찰음 효과
+                        if (Math.floor(time * 0.01) % 15 === 0) {
+                            playSynthesizedSound('wallrun');
+                        }
+
+                        // 3. 벽 차고 뒤로 점프 (Wall Kick / Wall Jump)
+                        if (spacePressedThisFrame) {
+                            player.vel.y = 10.0; // 높은 점프 추진력 확보
+
+                            // 벽의 법선 벡터(반대 방향)로 강력하게 플레이어를 튕겨내듯 밀어냅니다.
+                            player.vel.x = player.wallNormal.x * 7.5;
+                            player.vel.z = player.wallNormal.z * 7.5;
+
+                            player.isWallClimbing = false;
+                            player.wallClimbCooldown = 0.45; // 짧은 재발동 금지 시간 적용
+                            playSynthesizedSound('jump');
+                            landSpring = -0.15;
+                        }
+                    } else {
+                        // 스페이스바를 떼거나 힘(스태미나)을 다했을 시 하강 물리로 해제
+                        player.isWallClimbing = false;
+                        player.wallClimbCooldown = 0.5;
+                    }
+                }
+            }
+
+            // HUD 벽 오르기(Wall Climb) 전용 상태 게이지 토글
+            const wallclimbBadge = document.getElementById('wallclimb-badge');
+            if (player.isWallClimbing) {
+                wallclimbBadge.classList.remove('hidden');
+                const pct = Math.max(0, Math.floor((player.wallClimbTimer / 2.5) * 100)); // 최대 2.5초 기준 게이지 연동
+                wallclimbBadge.innerText = `WALL CLIMBING (${pct}%)`;
+            } else {
+                wallclimbBadge.classList.add('hidden');
+            }
+
+            // 일반 상태의 횡 이동 스피드 스펙 대입
+            const isSprinting = keys.shift && player.isGrounded;
+            let currentSpeed = isSprinting ? 12.5 : 8.0;
+
+            document.getElementById('sprint-badge').innerText = isSprinting ? "SPRINTING" : "WALKING";
+            document.getElementById('sprint-badge').className = isSprinting 
+                ? "text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded inline-block font-mono tracking-wider animate-pulse"
+                : "text-xs bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded inline-block font-mono tracking-wider";
+
+            // 수평 입력 변환 연산
+            let moveDir = new THREE.Vector3(0, 0, 0);
+            
+            if (isMobileDevice) {
+                const forwardVec = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                const rightVec = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                
+                moveDir.addScaledVector(forwardVec, touchMoveVector.y);
+                moveDir.addScaledVector(rightVec, touchMoveVector.x);
+            } else {
+                const forwardVec = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                const rightVec = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+
+                if (keys.w) moveDir.add(forwardVec);
+                if (keys.s) moveDir.add(forwardVec.clone().negate());
+                if (keys.a) moveDir.add(rightVec.clone().negate());
+                if (keys.d) moveDir.add(rightVec);
+            }
+
+            if (moveDir.lengthSq() > 0) {
+                moveDir.normalize();
+            }
+
+            // 벽 등반 중이 아닐 때만 일반 수평 관성 제어 허용
+            if (!player.isWallClimbing) {
+                if (player.wallClimbCooldown > 0.15) {
+                    // 수직 벽 차기 직후 가혹한 선형 관성 보간 처리
+                    player.vel.x = THREE.MathUtils.lerp(player.vel.x, moveDir.x * currentSpeed, 5 * dt);
+                    player.vel.z = THREE.MathUtils.lerp(player.vel.z, moveDir.z * currentSpeed, 5 * dt);
+                } else {
+                    player.vel.x = moveDir.x * currentSpeed;
+                    player.vel.z = moveDir.z * currentSpeed;
+                }
+            }
+
+            // 일반 자연 낙하 중력 작용 (벽 등반 상태가 아닐 때)
+            if (!player.isGrounded && !player.isWallClimbing) {
+                player.vel.y -= 25.0 * dt; 
+            }
+
+            // 기본 도약 점프
+            if (keys.space && player.isGrounded) {
+                player.vel.y = 11.0;
+                player.isGrounded = false;
+                playSynthesizedSound('jump');
+                landSpring = -0.15; 
+            }
+
+            // 수평 충돌 체크
+            let nextX = player.pos.x + player.vel.x * dt;
+            let nextZ = player.pos.z + player.vel.z * dt;
+
+            let hitHorizontal = false;
+            for (let box of colliders) {
+                if (checkAABBCollision(nextX, player.pos.y, nextZ, player.radius, player.height, box)) {
+                    hitHorizontal = true;
+                    break;
+                }
+            }
+
+            if (!hitHorizontal) {
+                player.pos.x = nextX;
+                player.pos.z = nextZ;
+            } else {
+                let hitX = false;
+                for (let box of colliders) {
+                    if (checkAABBCollision(nextX, player.pos.y, player.pos.z, player.radius, player.height, box)) {
+                        hitX = true;
+                        break;
+                    }
+                }
+                if (!hitX) player.pos.x = nextX;
+
+                let hitZ = false;
+                for (let box of colliders) {
+                    if (checkAABBCollision(player.pos.x, player.pos.y, nextZ, player.radius, player.height, box)) {
+                        hitZ = true;
+                        break;
+                    }
+                }
+                if (!hitZ) player.pos.z = nextZ;
+            }
+
+            // 수직 충돌 체크 및 리지 안정성 검출
+            let nextY = player.pos.y + player.vel.y * dt;
+            let isLandingOnRoof = false;
+            let currentSafeBuilding = -1;
+
+            for (let i = 0; i < colliders.length; i++) {
+                const box = colliders[i];
+                // 0.05m 의 미세 허용 한도(Tolerance)를 두어 지상에서 충돌 감지가 완벽히 고정되도록 개선
+                if (checkAABBCollision(player.pos.x, nextY, player.pos.z, player.radius, player.height, box, 0.05)) {
+                    if (player.vel.y <= 0) { 
+                        nextY = box.maxY + player.height;
+                        player.vel.y = 0;
+                        isLandingOnRoof = true;
+
+                        buildings.forEach((build, index) => {
+                            if (player.pos.x >= build.collider.minX && player.pos.x <= build.collider.maxX &&
+                                player.pos.z >= build.collider.minZ && player.pos.z <= build.collider.maxZ) {
+                                currentSafeBuilding = index;
+                            }
+                        });
+                    } else { 
+                        nextY = box.minY - 0.05;
+                        player.vel.y = 0;
+                    }
+                    break;
+                }
+            }
+
+            player.pos.y = nextY;
+            player.isGrounded = isLandingOnRoof;
+
+            if (player.isGrounded && !lastGroundedState) {
+                playSynthesizedSound('land');
+                landSpring = 0.12; 
+            }
+            lastGroundedState = player.isGrounded;
+
+            if (player.isGrounded && currentSafeBuilding !== -1 && currentSafeBuilding >= player.lastSafeBuildingIndex) {
+                player.lastSafeBuildingIndex = currentSafeBuilding;
+                player.lastSafePosition.copy(player.pos);
+            }
+
+            // -------------------------------------------------------------
+            // Camera Polish: Climbing Bob and Pitch View Tilt
+            // -------------------------------------------------------------
+            landSpring = THREE.MathUtils.lerp(landSpring, 0, 7 * dt);
+
+            let climbPitchOffset = 0;
+            let climbXOffset = 0;
+
+            // 벽을 기어오를 때 특유의 신체 모션 카메라 오프셋 및 수직 헤드봅 계산
+            if (player.isWallClimbing) {
+                // 등반 중일 땐 자연스레 난간 턱을 바라볼 수 있도록 시선을 강제로 위로 8도(0.14 rad) 회전
+                climbPitchOffset = 0.14;
+                // 양손으로 번갈아가며 짚을 때의 리드미컬한 좌우 좌상향 카메라 봅 모션
+                climbXOffset = Math.sin(time * 0.015) * 0.04;
+                customCamera.position.y = player.pos.y + Math.abs(Math.sin(time * 0.015)) * 0.12 - landSpring;
+            } else {
+                // 지상 런닝 시 기본 발걸음 헤드 봅 및 리드미컬 발소리 재생 연동
+                const speedMagnitude = Math.sqrt(player.vel.x * player.vel.x + player.vel.z * player.vel.z);
+                if (player.isGrounded && speedMagnitude > 0.5) {
+                    const bobFreq = isSprinting ? 14 : 9.5;
+                    const bobAmp = isSprinting ? 0.14 : 0.07;
+                    
+                    const oldBobTimer = bobTimer;
+                    bobTimer += dt * bobFreq;
+                    
+                    // bobTimer가 반 주기(Step)를 지날 때 마다 발소리 재생
+                    if (Math.floor(bobTimer / Math.PI) > Math.floor(oldBobTimer / Math.PI)) {
+                        playSynthesizedSound('footstep');
+                    }
+                    
+                    customCamera.position.y = player.pos.y + Math.sin(bobTimer) * bobAmp - landSpring;
+                } else {
+                    bobTimer = 0;
+                    customCamera.position.y = THREE.MathUtils.lerp(customCamera.position.y, player.pos.y - landSpring, 10 * dt);
+                }
+            }
+
+            customCamera.position.x = player.pos.x + climbXOffset;
+            customCamera.position.z = player.pos.z;
+
+            // 벽등반 특유의 수직 시선 조절 값 합성 반영
+            customCamera.rotation.y = yaw;
+            customCamera.rotation.x = pitch + climbPitchOffset;
+
+            // 수평 스트레이프 이동 틸트
+            let targetTilt = 0;
+            if (keys.a) targetTilt = 0.015;
+            if (keys.d) targetTilt = -0.015;
+            
+            customCamera.rotation.z = THREE.MathUtils.lerp(customCamera.rotation.z, targetTilt, 8 * dt);
+
+            // 단발성 이벤트 리셋
+            spacePressedThisFrame = false;
+
+            // Check Collectibles collision
+            for (let i = stars.length - 1; i >= 0; i--) {
+                const s = stars[i];
+                const distSq = player.pos.distanceToSquared(s.position);
+                if (distSq < 3.2) { 
+                    scene.remove(s);
+                    stars.splice(i, 1);
+                    score += 100;
+                    document.getElementById('hud-score').innerText = score;
+                    playSynthesizedSound('star');
+                    createCollectEffect(s.position);
+                }
+            }
+
+            // Check Goal Portal Reached
+            if (goalPortal) {
+                const pFlat = new THREE.Vector2(player.pos.x, player.pos.z);
+                const gFlat = new THREE.Vector2(goalPortal.position.x, goalPortal.position.z);
+                const hDist = pFlat.distanceTo(gFlat);
+                const vDist = Math.abs(player.pos.y - (goalPortal.position.y - 3)); 
+
+                if (hDist < 3.8 && vDist < 2.5) {
+                    levelCleared();
+                }
+            }
+
+            if (player.pos.y < -15) {
+                triggerPlayerFall();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Particle FX on collect
+        // -------------------------------------------------------------
+        let particleSystems = [];
+        function createCollectEffect(position) {
+            const partCount = 12;
+            const pGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(partCount * 3);
+            const velocities = [];
+
+            for (let i = 0; i < partCount; i++) {
+                positions[i * 3] = position.x;
+                positions[i * 3 + 1] = position.y;
+                positions[i * 3 + 2] = position.z;
+
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 6,
+                    Math.random() * 4 + 2,
+                    (Math.random() - 0.5) * 6
+                ));
+            }
+
+            pGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const pMaterial = new THREE.PointsMaterial({
+                color: 0xffea00,
+                size: 0.4,
+                transparent: true,
+                opacity: 1.0
+            });
+
+            const points = new THREE.Points(pGeometry, pMaterial);
+            scene.add(points);
+
+            particleSystems.push({
+                points: points,
+                velocities: velocities,
+                age: 0,
+                maxAge: 0.6
+            });
+        }
+
+        function updateParticles(dt) {
+            for (let i = particleSystems.length - 1; i >= 0; i--) {
+                const sys = particleSystems[i];
+                sys.age += dt;
+
+                if (sys.age > sys.maxAge) {
+                    scene.remove(sys.points);
+                    particleSystems.splice(i, 1);
+                    continue;
+                }
+
+                sys.points.material.opacity = 1.0 - (sys.age / sys.maxAge);
+
+                const posAttr = sys.points.geometry.attributes.position;
+                for (let j = 0; j < posAttr.count; j++) {
+                    let px = posAttr.getX(j);
+                    let py = posAttr.getY(j);
+                    let pz = posAttr.getZ(j);
+
+                    const vel = sys.velocities[j];
+                    px += vel.x * dt;
+                    py += vel.y * dt;
+                    pz += vel.z * dt;
+                    vel.y -= 9.8 * dt;
+
+                    posAttr.setXYZ(j, px, py, pz);
+                }
+                posAttr.needsUpdate = true;
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Level Transition & End Modals Logic
+        // -------------------------------------------------------------
+        function levelCleared() {
+            playSynthesizedSound('victory');
+            
+            score += 500;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('parkour_high_score', highScore);
+                document.getElementById('hud-high').innerText = highScore;
+            }
+
+            document.getElementById('hud-score').innerText = score;
+            document.getElementById('victory-score').innerText = score;
+            
+            document.exitPointerLock();
+            document.getElementById('victory-modal').classList.remove('hidden');
+        }
+
+        document.getElementById('btn-next-stage').addEventListener('click', () => {
+            currentStage++;
+            document.getElementById('hud-stage').innerText = currentStage;
+            document.getElementById('victory-modal').classList.add('hidden');
+            
+            generateCourse(currentStage);
+
+            if (!isMobileDevice) {
+                document.body.requestPointerLock();
+            }
+        });
+
+        function triggerPlayerFall() {
+            playSynthesizedSound('fall');
+            document.exitPointerLock();
+
+            document.getElementById('fail-stage').innerText = currentStage;
+            document.getElementById('fall-modal').classList.remove('hidden');
+        }
+
+        document.getElementById('btn-respawn').addEventListener('click', () => {
+            document.getElementById('fall-modal').classList.add('hidden');
+            
+            player.pos.copy(player.lastSafePosition);
+            player.vel.set(0, 0, 0);
+            player.isGrounded = true;
+            player.isWallClimbing = false;
+            player.wallClimbTimer = 0;
+            player.wallClimbCooldown = 0.5; 
+
+            if (!isMobileDevice) {
+                document.body.requestPointerLock();
+            }
+        });
+
+        // -------------------------------------------------------------
+        // Render & Game loop
+        // -------------------------------------------------------------
+        let lastTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const dt = Math.min((time - lastTime) / 1000, 0.1); 
+            lastTime = time;
+
+            if (isPointerLocked || isMobileDevice) {
+                updatePhysics(dt);
+                updateParticles(dt);
+
+                if (goalPortal) {
+                    goalPortal.rotation.y += 0.8 * dt;
+                }
+
+                stars.forEach(star => {
+                    star.rotation.y += 1.5 * dt;
+                    star.rotation.x += 0.8 * dt;
+                    star.position.y += Math.sin(time * 0.005) * 0.003;
+                });
+
+                starMaterial.opacity = 0.6 + Math.sin(time * 0.001) * 0.3;
+            }
+
+            renderer.render(scene, customCamera);
+        }
+
+        window.onload = function() {
+            animate();
+        };
+
+        window.addEventListener('resize', () => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            renderer.setSize(w, h);
+            customCamera.aspect = w / h;
+            customCamera.updateProjectionMatrix();
+        });
+
+    </script>
+</body>
+</html>
