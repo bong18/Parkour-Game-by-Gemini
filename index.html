@@ -316,6 +316,8 @@
             wallNormal: new THREE.Vector3()
         };
 
+        let smoothCameraY = 15 + 1.8; // 착지 시 부드러운 시선 처리를 위한 기준 카메라 Y 좌표
+
         // Keyboard State
         const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
         let spacePressedThisFrame = false; // 벽 도약 전용 단발성 입력 감지
@@ -652,6 +654,8 @@
             player.lastSafePosition.copy(player.pos);
             player.lastSafeBuildingIndex = 0;
 
+            smoothCameraY = player.pos.y;
+
             // Reset wall climbing stats on stage generate
             player.isWallClimbing = false;
             player.wallClimbTimer = 0;
@@ -949,6 +953,10 @@
         function updatePhysics(dt) {
             const time = performance.now();
 
+            // 카메라 베이스 높이를 플레이어 높이에 점진적으로 연동 (공중에선 빠르게, 땅에선 충격 분산을 위해 묵직하게 보간)
+            const cameraLerpSpeed = player.isGrounded ? 15.0 : 25.0;
+            smoothCameraY = THREE.MathUtils.lerp(smoothCameraY, player.pos.y, cameraLerpSpeed * dt);
+
             // 1. 벽 등반(Wall Climb) 쿨다운 감소
             if (player.wallClimbCooldown > 0) {
                 player.wallClimbCooldown -= dt;
@@ -1122,8 +1130,8 @@
 
             for (let i = 0; i < colliders.length; i++) {
                 const box = colliders[i];
-                // 0.05m 의 미세 허용 한도(Tolerance)를 두어 지상에서 충돌 감지가 완벽히 고정되도록 개선
-                if (checkAABBCollision(player.pos.x, nextY, player.pos.z, player.radius, player.height, box, 0.05)) {
+                // 찰나의 착지 시 순간이동 느낌을 없애기 위해 감지 허용 폭을 0.05m에서 0.015m(1.5cm)로 좁혀 밀착감을 늘림
+                if (checkAABBCollision(player.pos.x, nextY, player.pos.z, player.radius, player.height, box, 0.015)) {
                     if (player.vel.y <= 0) { 
                         nextY = box.maxY + player.height;
                         player.vel.y = 0;
@@ -1171,7 +1179,7 @@
                 climbPitchOffset = 0.14;
                 // 양손으로 번갈아가며 짚을 때의 리드미컬한 좌우 좌상향 카메라 봅 모션
                 climbXOffset = Math.sin(time * 0.015) * 0.04;
-                customCamera.position.y = player.pos.y + Math.abs(Math.sin(time * 0.015)) * 0.12 - landSpring;
+                customCamera.position.y = smoothCameraY + Math.abs(Math.sin(time * 0.015)) * 0.12 - landSpring;
             } else {
                 // 지상 런닝 시 기본 발걸음 헤드 봅 및 리드미컬 발소리 재생 연동
                 const speedMagnitude = Math.sqrt(player.vel.x * player.vel.x + player.vel.z * player.vel.z);
@@ -1187,10 +1195,10 @@
                         playSynthesizedSound('footstep');
                     }
                     
-                    customCamera.position.y = player.pos.y + Math.sin(bobTimer) * bobAmp - landSpring;
+                    customCamera.position.y = smoothCameraY + Math.sin(bobTimer) * bobAmp - landSpring;
                 } else {
                     bobTimer = 0;
-                    customCamera.position.y = THREE.MathUtils.lerp(customCamera.position.y, player.pos.y - landSpring, 10 * dt);
+                    customCamera.position.y = smoothCameraY - landSpring;
                 }
             }
 
@@ -1363,6 +1371,8 @@
             player.isWallClimbing = false;
             player.wallClimbTimer = 0;
             player.wallClimbCooldown = 0.5; 
+
+            smoothCameraY = player.pos.y;
 
             if (!isMobileDevice) {
                 document.body.requestPointerLock();
